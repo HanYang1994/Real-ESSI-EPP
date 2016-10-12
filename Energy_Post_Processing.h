@@ -40,8 +40,8 @@
 #define Energy_Out std::cout << std::endl << __PRETTY_FUNCTION__ << " : \n"
 
 #define NUM_DOF 3
-#define EightNodeBrickLT_OUTPUT_SIZE 8*6*4
-#define SOLID_ELEMENT_GP_OUTPUT_SIZE 6*4
+//#define EightNodeBrickLT_OUTPUT_SIZE 8*6*4
+#define SOLID_ELEMENT_GP_OUTPUT_SIZE (6*4+1)
 
 class Energy_Post_Processing
 {	
@@ -84,8 +84,9 @@ public:
     //Material properties
     double mass_density;
 
-    bool is_linear_KH;
+    int hardening_type;
     double a1;
+    double k1;
 
     bool is_AF_KH;
     double AF_ha;
@@ -142,7 +143,8 @@ public:
     double* plastic_work_density_eleavg;
     double* plastic_free_energy_density_eleavg;
     double* plastic_dissipation_density_eleavg;
-    double* mechanical_energy_density_eleavg;            // Mechanical Enrgy = Kinetic Energy + Strain Energy + Plastic Free Energy
+    double* mechanical_energy_density_eleavg;            // Mechanical Enrgy = Kinetic Energy + Strain Energy
+    double* stored_energy_density_eleavg;            // Stored Enrgy = Kinetic Energy + Strain Energy + Plastic Free Energy
 
 
     int* class_tags;
@@ -152,6 +154,7 @@ public:
 
 
     double* total_mechanical_energy;
+    double* total_stored_energy;
     double* total_plastic_work;
     double* total_plastic_free_energy;
     double* total_plastic_dissipation;
@@ -190,6 +193,7 @@ public:
     hid_t id_plastic_free_energy_avg_dataset;
     hid_t id_plastic_dissipation_avg_dataset;
     hid_t id_mechanical_energy_avg_dataset;
+    hid_t id_stored_energy_avg_dataset;
     hid_t id_index_to_Energy_avg_dataset;
 
     //hid_t id_center_dataset;
@@ -198,6 +202,7 @@ public:
     //hid_t id_back_stress_dataset;
 
     hid_t id_total_mechanical_energy_dataset;
+    hid_t id_total_stored_energy_dataset;
     hid_t id_total_plastic_work_dataset;
     hid_t id_total_plastic_free_energy_dataset;
     hid_t id_total_plastic_dissipation_dataset;

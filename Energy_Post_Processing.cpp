@@ -74,10 +74,12 @@ void Energy_Post_Processing::clean_up()
     delete[] strain_energy_density_eleavg;
     delete[] plastic_work_density_eleavg;
     delete[] mechanical_energy_density_eleavg;
+    delete[] stored_energy_density_eleavg;
     delete[] index_energy_density_eleavg;
 
     delete[] element_volume;
     delete[] total_mechanical_energy;
+    delete[] total_stored_energy;
     delete[] total_plastic_work;
     delete[] total_kinetic_energy;
     delete[] total_strain_energy;
@@ -93,10 +95,15 @@ void Energy_Post_Processing::initialize()
     // Define material properties
     //===========================================================================
 
-    mass_density = 2000;
+    mass_density = 8050;
 
-    is_linear_KH = true;
-    a1 = 1e8;                   // Material constant for linear kinematic hardening
+    // Hardening type:
+    // 0 -- No hardening
+    // 1 -- Isotropic hardening
+    // 2 -- Kinematic hardening
+    hardening_type = 2;
+    a1 = 1e5/20000.0;                   // Material constant for linear kinematic hardening
+    k1 = 0.2e11;
 
 //    AF_ha = 1e4/20000.0;
 //    a1 = AF_ha*2.0/3.0;                   // Material constant for AF kinematic hardening
@@ -279,6 +286,7 @@ void Energy_Post_Processing::initialize()
     plastic_free_energy_density_eleavg = new double[number_of_elements*number_of_timesteps];
     plastic_dissipation_density_eleavg = new double[number_of_elements*number_of_timesteps];
     mechanical_energy_density_eleavg = new double[number_of_elements*number_of_timesteps];
+    stored_energy_density_eleavg = new double[number_of_elements*number_of_timesteps];
 
     index_energy_density_eleavg = new int[max_element_tag];
     //index_energy_density_eleavg[0] = -1;
@@ -286,6 +294,7 @@ void Energy_Post_Processing::initialize()
 
 
     total_mechanical_energy = new double[number_of_timesteps];
+    total_stored_energy = new double[number_of_timesteps];
     total_plastic_work = new double[number_of_timesteps];
     total_plastic_free_energy = new double[number_of_timesteps];
     total_plastic_dissipation = new double[number_of_timesteps];
@@ -575,7 +584,7 @@ void Energy_Post_Processing::computeAndWriteEnergyDensity()
     for (int i = 0; i < max_element_tag; i++)
     {
         //Energy_Out << "Average energy density at elements " << i+1 << " is being computed.\n";
-        if (class_tags[i] == 8001)
+        if (class_tags[i] == 6)
         {
             computeElementAverage_8NodeBrick(i);
         }
@@ -668,6 +677,7 @@ void Energy_Post_Processing::computeAndWriteEnergyDensity()
 
 
     status = H5Dwrite(id_mechanical_energy_avg_dataset, H5T_NATIVE_DOUBLE, id_tavg_memspace, id_tavg_dataspace, H5P_DEFAULT, mechanical_energy_density_eleavg);
+    status = H5Dwrite(id_stored_energy_avg_dataset, H5T_NATIVE_DOUBLE, id_tavg_memspace, id_tavg_dataspace, H5P_DEFAULT, stored_energy_density_eleavg);
     //hdf5_check_error(status);
 
 
@@ -675,6 +685,7 @@ void Energy_Post_Processing::computeAndWriteEnergyDensity()
     H5Sclose(id_tavg_dataspace);
     H5Sclose(id_tavg_memspace);
     H5Dclose(id_mechanical_energy_avg_dataset);
+    H5Dclose(id_stored_energy_avg_dataset);
 
     Energy_Out << "Element average total energy density is successfully output.\n";
 
@@ -758,7 +769,7 @@ void Energy_Post_Processing::computeAndWriteEnergyDensity()
 
     for (int i = 0; i < max_element_tag; i++)
     {
-        if (class_tags[i] == 8001)
+        if (class_tags[i] == 6)
         {
             computeElementVolume_8NodeBrick(i);
         }
@@ -864,6 +875,7 @@ void Energy_Post_Processing::computeAndWriteEnergyDensity()
     id_memspace = H5Screate_simple(rank, data_dims, data_dims);
 
     status = H5Dwrite(id_total_mechanical_energy_dataset, H5T_NATIVE_DOUBLE, id_memspace, id_dataspace, H5P_DEFAULT, total_mechanical_energy);
+    status = H5Dwrite(id_total_stored_energy_dataset, H5T_NATIVE_DOUBLE, id_memspace, id_dataspace, H5P_DEFAULT, total_stored_energy);
     status = H5Dwrite(id_total_plastic_work_dataset, H5T_NATIVE_DOUBLE, id_memspace, id_dataspace, H5P_DEFAULT, total_plastic_work);
     status = H5Dwrite(id_total_plastic_free_energy_dataset, H5T_NATIVE_DOUBLE, id_memspace, id_dataspace, H5P_DEFAULT, total_plastic_free_energy);
     status = H5Dwrite(id_total_plastic_dissipation_dataset, H5T_NATIVE_DOUBLE, id_memspace, id_dataspace, H5P_DEFAULT, total_plastic_dissipation);
@@ -875,6 +887,7 @@ void Energy_Post_Processing::computeAndWriteEnergyDensity()
     H5Sclose(id_dataspace);
     H5Sclose(id_memspace);
     H5Dclose(id_total_mechanical_energy_dataset);
+    H5Dclose(id_total_stored_energy_dataset);
     H5Dclose(id_total_plastic_work_dataset);
     H5Dclose(id_total_plastic_free_energy_dataset);
     H5Dclose(id_total_plastic_dissipation_dataset);
@@ -1754,6 +1767,20 @@ void Energy_Post_Processing::createEnergyDatasets()
         id_mechanical_energy_avg_dataset = H5Dopen(id_file, "/Energy_Post_Processing/Energy_Density_Element_Average/Mechanical_Energy_Density_Element_Average", H5P_DEFAULT);
     }
 
+    //Create "Energy_Post_Processing/Stored_Energy_Density_Element_Average" dataset
+    status = H5Gget_objinfo (id_file, "Energy_Post_Processing/Energy_Density_Element_Average/Stored_Energy_Density_Element_Average", 0, 0);
+    if (status != 0)
+    {
+        //Energy_Out << "    \"Energy_Post_Processing/Energy_Density_Element_Average/Stored_Energy_Density_Element_Average\" either does NOT exist or some other error occurred.\n";
+        id_stored_energy_avg_dataset = H5Dcreate2(id_file, "/Energy_Post_Processing/Energy_Density_Element_Average/Stored_Energy_Density_Element_Average", H5T_NATIVE_DOUBLE, id_dataspace_TEnergy_avg, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        //Energy_Out << "    The dataset is successfully created!\n";
+    }
+    else
+    {
+        Energy_Warning << "    \"Energy_Post_Processing/Energy_Density_Element_Average/Stored_Energy_Density_Element_Average\" exists.\n";
+        id_stored_energy_avg_dataset = H5Dopen(id_file, "/Energy_Post_Processing/Energy_Density_Element_Average/Stored_Energy_Density_Element_Average", H5P_DEFAULT);
+    }
+
     //Create "Energy_Post_Processing/Index_to_Energy_Density_Element_Average" dataset
     status = H5Gget_objinfo (id_file, "Energy_Post_Processing/Energy_Density_Element_Average/Index_to_Energy_Density_Element_Average", 0, 0);
     if (status != 0)
@@ -1840,6 +1867,21 @@ void Energy_Post_Processing::createEnergyDatasets()
     {
         Energy_Warning << "    \"Energy_Post_Processing/Total_Energy/Total_Mechanical_Energy\" exists.\n";
         id_total_mechanical_energy_dataset = H5Dopen(id_file, "/Energy_Post_Processing/Total_Energy/Total_Mechanical_Energy", H5P_DEFAULT);
+    }
+
+
+    //Create "Total_Stored_Energy" dataset
+    status = H5Gget_objinfo (id_file, "Energy_Post_Processing/Total_Energy/Total_Stored_Energy", 0, 0);
+    if (status != 0)
+    {
+        //Energy_Out << "    \"Energy_Post_Processing/Total_Energy/Total_Stored_Energy\" either does NOT exist or some other error occurred.\n";
+        id_total_stored_energy_dataset = H5Dcreate2(id_file, "/Energy_Post_Processing/Total_Energy/Total_Stored_Energy", H5T_NATIVE_DOUBLE, id_dataspace_total_mechanical_energy, H5P_DEFAULT, H5P_DEFAULT, H5P_DEFAULT);
+        //Energy_Out << "    The dataset is successfully created!\n";
+    }
+    else
+    {
+        Energy_Warning << "    \"Energy_Post_Processing/Total_Energy/Total_Stored_Energy\" exists.\n";
+        id_total_stored_energy_dataset = H5Dopen(id_file, "/Energy_Post_Processing/Total_Energy/Total_Stored_Energy", H5P_DEFAULT);
     }
 
 
@@ -2036,7 +2078,7 @@ void Energy_Post_Processing::computeSEnergyDensity(int element)
     H5Dread(id_outputs, H5T_NATIVE_DOUBLE, id_output_memspace, id_outputs_dataspace, H5P_DEFAULT, output_of_element);
 
     //Energy_Out << number_of_GPs << endl;
-    //Energy_Out << element << " " << e << " " << output_of_element[0][0] << " " << output_of_element[17][0] << endl;
+    //Energy_Out << element << " " << output_of_element[4][100] << " " << output_of_element[10][100] << " " << output_of_element[16][100] << " " << output_of_element[22][100] << endl;
 
 
     for (int e = 0; e < number_of_GPs_element[element]; e++)
@@ -2121,6 +2163,7 @@ void Energy_Post_Processing::computeSEnergyDensity(int element)
         double back_stress[6][number_of_timesteps];
         double elastic_strain[6][number_of_timesteps];
         double plastic_strain[6][number_of_timesteps];
+        double yield_radius[number_of_timesteps];
 
         for (int i = 0; i < number_of_timesteps; i++)
         {
@@ -2131,6 +2174,7 @@ void Energy_Post_Processing::computeSEnergyDensity(int element)
                 elastic_strain[j][i] = output_of_element[SOLID_ELEMENT_GP_OUTPUT_SIZE*e+j][i] - output_of_element[SOLID_ELEMENT_GP_OUTPUT_SIZE*e+j+6][i];
                 plastic_strain[j][i] = output_of_element[SOLID_ELEMENT_GP_OUTPUT_SIZE*e+j+6][i];
             }
+            yield_radius[i] = output_of_element[SOLID_ELEMENT_GP_OUTPUT_SIZE*e+24][i];
         }
         
 
@@ -2254,30 +2298,67 @@ void Energy_Post_Processing::computeSEnergyDensity(int element)
         // This is the new algorithm!!! (Aug 2016)
         //===========================================================================
 
-        // First step
-        plastic_free_energy_density_step[(index_strain_energy_density[element]+e)*number_of_timesteps] = 1.0/a1*(
-            back_stress[0][0]*back_stress[0][0]/2 +
-            back_stress[1][0]*back_stress[1][0]/2 +
-            back_stress[2][0]*back_stress[2][0]/2 +
-            back_stress[3][0]*back_stress[3][0] +
-            back_stress[4][0]*back_stress[4][0] +
-            back_stress[5][0]*back_stress[5][0]);
-
-        plastic_free_energy_density_cumu[(index_strain_energy_density[element]+e)*number_of_timesteps] = plastic_free_energy_density_step[(index_strain_energy_density[element]+e)*number_of_timesteps];
-
-        for (int j = 1; j < number_of_timesteps; j++)
+        if (hardening_type == 2)
         {
-            plastic_free_energy_density_step[(index_strain_energy_density[element]+e)*number_of_timesteps+j] = 1.0/a1*(
-                (back_stress[0][j]-back_stress[0][j-1])*(back_stress[0][j]+back_stress[0][j-1])/2 +
-                (back_stress[1][j]-back_stress[1][j-1])*(back_stress[1][j]+back_stress[1][j-1])/2 +
-                (back_stress[2][j]-back_stress[2][j-1])*(back_stress[2][j]+back_stress[2][j-1])/2 +
-                (back_stress[3][j]-back_stress[3][j-1])*(back_stress[3][j]+back_stress[3][j-1]) +
-                (back_stress[4][j]-back_stress[4][j-1])*(back_stress[4][j]+back_stress[4][j-1]) +
-                (back_stress[5][j]-back_stress[5][j-1])*(back_stress[5][j]+back_stress[5][j-1]));
+            // First step
+            plastic_free_energy_density_step[(index_strain_energy_density[element]+e)*number_of_timesteps] = 
+                1.0/a1*(
+                back_stress[0][0]*back_stress[0][0]/2 +
+                back_stress[1][0]*back_stress[1][0]/2 +
+                back_stress[2][0]*back_stress[2][0]/2 +
+                back_stress[3][0]*back_stress[3][0] +
+                back_stress[4][0]*back_stress[4][0] +
+                back_stress[5][0]*back_stress[5][0]);
+    
 
-            plastic_free_energy_density_cumu[(index_strain_energy_density[element]+e)*number_of_timesteps+j] = 
-                plastic_free_energy_density_cumu[(index_strain_energy_density[element]+e)*number_of_timesteps+j-1] + 
-                plastic_free_energy_density_step[(index_strain_energy_density[element]+e)*number_of_timesteps+j];
+            plastic_free_energy_density_cumu[(index_strain_energy_density[element]+e)*number_of_timesteps] = plastic_free_energy_density_step[(index_strain_energy_density[element]+e)*number_of_timesteps];
+
+            for (int j = 1; j < number_of_timesteps; j++)
+            {
+                plastic_free_energy_density_step[(index_strain_energy_density[element]+e)*number_of_timesteps+j] = 
+                    1.0/a1*(
+                    (back_stress[0][j]-back_stress[0][j-1])*(back_stress[0][j]+back_stress[0][j-1])/2 +
+                    (back_stress[1][j]-back_stress[1][j-1])*(back_stress[1][j]+back_stress[1][j-1])/2 +
+                    (back_stress[2][j]-back_stress[2][j-1])*(back_stress[2][j]+back_stress[2][j-1])/2 +
+                    (back_stress[3][j]-back_stress[3][j-1])*(back_stress[3][j]+back_stress[3][j-1]) +
+                    (back_stress[4][j]-back_stress[4][j-1])*(back_stress[4][j]+back_stress[4][j-1]) +
+                    (back_stress[5][j]-back_stress[5][j-1])*(back_stress[5][j]+back_stress[5][j-1]));
+
+                plastic_free_energy_density_cumu[(index_strain_energy_density[element]+e)*number_of_timesteps+j] = 
+                    plastic_free_energy_density_cumu[(index_strain_energy_density[element]+e)*number_of_timesteps+j-1] + 
+                    plastic_free_energy_density_step[(index_strain_energy_density[element]+e)*number_of_timesteps+j];
+            }
+        }
+        else if (hardening_type == 1)
+        {
+            // First step
+            plastic_free_energy_density_step[(index_strain_energy_density[element]+e)*number_of_timesteps] = 0;
+    
+
+            plastic_free_energy_density_cumu[(index_strain_energy_density[element]+e)*number_of_timesteps] = plastic_free_energy_density_step[(index_strain_energy_density[element]+e)*number_of_timesteps];
+
+            for (int j = 1; j < number_of_timesteps; j++)
+            {
+                plastic_free_energy_density_step[(index_strain_energy_density[element]+e)*number_of_timesteps+j] = 
+                    1.0/k1*(yield_radius[j]-yield_radius[j-1])*(yield_radius[j]+yield_radius[j-1])/2;
+
+                plastic_free_energy_density_cumu[(index_strain_energy_density[element]+e)*number_of_timesteps+j] = 
+                    plastic_free_energy_density_cumu[(index_strain_energy_density[element]+e)*number_of_timesteps+j-1] + 
+                    plastic_free_energy_density_step[(index_strain_energy_density[element]+e)*number_of_timesteps+j];
+            }
+        }
+        else if (hardening_type == 0)
+        {
+            for (int j = 0; j < number_of_timesteps; j++)
+            {
+                plastic_free_energy_density_step[(index_strain_energy_density[element]+e)*number_of_timesteps+j] = 0.0;
+
+                plastic_free_energy_density_cumu[(index_strain_energy_density[element]+e)*number_of_timesteps+j] = 0.0;
+            }
+        }
+        else
+        {
+            Energy_Error << "Hardening type not defined!";
         }
 
 
@@ -2367,8 +2448,9 @@ void Energy_Post_Processing::computeElementAverage_8NodeBrick(int element)
 
         plastic_work_density_eleavg[tag_eleavg] = plastic_work_density_eleavg[tag_eleavg] / 8;
 
+        stored_energy_density_eleavg[tag_eleavg] = kinetic_energy_density_eleavg[tag_eleavg] + strain_energy_density_eleavg[tag_eleavg] + plastic_free_energy_density_eleavg[tag_eleavg];
 
-        mechanical_energy_density_eleavg[tag_eleavg] = kinetic_energy_density_eleavg[tag_eleavg] + strain_energy_density_eleavg[tag_eleavg] + plastic_free_energy_density_eleavg[tag_eleavg];
+        mechanical_energy_density_eleavg[tag_eleavg] = kinetic_energy_density_eleavg[tag_eleavg] + strain_energy_density_eleavg[tag_eleavg];
     }
 }
 
@@ -2436,8 +2518,8 @@ void Energy_Post_Processing::computeElementAverage_27NodeBrick(int element)
 
         plastic_dissipation_density_eleavg[tag_eleavg] = plastic_dissipation_density_eleavg[tag_eleavg] / 8;
 
-
-
+        stored_energy_density_eleavg[tag_eleavg] = kinetic_energy_density_eleavg[tag_eleavg] + strain_energy_density_eleavg[tag_eleavg] + plastic_free_energy_density_eleavg[tag_eleavg];
+        
         mechanical_energy_density_eleavg[tag_eleavg] = kinetic_energy_density_eleavg[tag_eleavg] + strain_energy_density_eleavg[tag_eleavg];
     }
 }
@@ -2491,6 +2573,7 @@ void Energy_Post_Processing::computeTotalEnergy()
     for (int j = 0; j < number_of_timesteps; j++)
     {
         total_mechanical_energy[j] = 0;
+        total_stored_energy[j] = 0;
         total_plastic_work[j] = 0;
         total_plastic_dissipation[j] = 0;
         total_kinetic_energy[j] = 0;
@@ -2501,6 +2584,7 @@ void Energy_Post_Processing::computeTotalEnergy()
             if (index_energy_density_eleavg[i] != -1)
             {
                 total_mechanical_energy[j] += mechanical_energy_density_eleavg[index_energy_density_eleavg[i]*number_of_timesteps+j]*element_volume[i];
+                total_stored_energy[j] += stored_energy_density_eleavg[index_energy_density_eleavg[i]*number_of_timesteps+j]*element_volume[i];
                 total_plastic_work[j] += plastic_work_density_eleavg[index_energy_density_eleavg[i]*number_of_timesteps+j]*element_volume[i];
                 total_plastic_free_energy[j] += plastic_free_energy_density_eleavg[index_energy_density_eleavg[i]*number_of_timesteps+j]*element_volume[i];
                 total_plastic_dissipation[j] += plastic_dissipation_density_eleavg[index_energy_density_eleavg[i]*number_of_timesteps+j]*element_volume[i];
@@ -2909,7 +2993,7 @@ double Energy_Post_Processing::computePlasticFreeEnergy_Linear_KH(double *plasti
 }
 
 
-
+/*
 //===========================================================================
 // Compute plastic free energy for Armstrong-Frederic kinematic hardening
 //===========================================================================
@@ -2947,5 +3031,5 @@ double Energy_Post_Processing::computePlasticFreeEnergy_AF_KH(double *equivalent
     //Energy_Out << step << " " << plastic_free_energy_AF_KH << endl;
     return plastic_free_energy_AF_KH;
 
-
 }
+*/
